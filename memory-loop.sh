@@ -31,6 +31,7 @@ show_help() {
     echo ""
     echo "Options:"
     echo "  simple         - Basic infinite loop (1 second delay)"
+    echo "  slow           - Slow loop for long-term testing (30 second delay)"
     echo "  fast           - Fast loop (0.1 second delay)"
     echo "  monitored      - Loop with memory monitoring"
     echo "  counted [N]    - Run N requests (default: 50)"
@@ -42,6 +43,7 @@ show_help() {
     echo ""
     echo "Examples:"
     echo "  $0 simple                    # Basic infinite loop"
+    echo "  $0 slow                     # Long-term gradual testing (3-4 hours)"
     echo "  $0 counted 100              # Run 100 requests"
     echo "  $0 parallel 5               # 5 parallel requests"
     echo "  $0 monitored                # Loop with monitoring"
@@ -58,6 +60,45 @@ simple_loop() {
         echo ""
         counter=$((counter + 1))
         sleep 1
+    done
+}
+
+# Slow loop for long-term testing (3-4 hours)
+slow_loop() {
+    echo -e "${GREEN}Starting slow loop for long-term testing (30 second delays)${NC}"
+    echo -e "${YELLOW}This mode is designed for 3-4 hour gradual memory growth${NC}"
+    echo -e "${YELLOW}Ctrl+C to stop${NC}"
+    
+    counter=1
+    start_time=$(date +%s)
+    
+    while true; do
+        current_time=$(date +%s)
+        elapsed=$((current_time - start_time))
+        elapsed_hours=$((elapsed / 3600))
+        elapsed_mins=$(((elapsed % 3600) / 60))
+        
+        echo -e "${BLUE}Request $counter (Running for ${elapsed_hours}h ${elapsed_mins}m)${NC}"
+        
+        # Get memory stats before request
+        response=$(curl -s -X POST "$BASE_URL/process")
+        if [ $? -eq 0 ]; then
+            # Extract memory info
+            used_memory=$(echo "$response" | grep -o '"usedMemoryMB":[0-9]*' | cut -d':' -f2)
+            max_memory=$(echo "$response" | grep -o '"maxMemoryMB":[0-9]*' | cut -d':' -f2)
+            cache_size=$(echo "$response" | grep -o '"primaryCacheSize":[0-9]*' | cut -d':' -f2)
+            
+            if [ ! -z "$used_memory" ] && [ ! -z "$max_memory" ]; then
+                memory_percent=$((used_memory * 100 / max_memory))
+                echo -e "  Memory: ${YELLOW}${used_memory}MB/${max_memory}MB (${memory_percent}%)${NC} | Cache: ${YELLOW}${cache_size}${NC}"
+            fi
+        else
+            echo -e "${RED}Request failed${NC}"
+        fi
+        
+        echo ""
+        counter=$((counter + 1))
+        sleep 30  # 30 second delay for gradual growth
     done
 }
 
@@ -245,6 +286,9 @@ clear_caches() {
 case "${1:-help}" in
     "simple")
         check_app && simple_loop
+        ;;
+    "slow")
+        check_app && slow_loop
         ;;
     "fast")
         check_app && fast_loop

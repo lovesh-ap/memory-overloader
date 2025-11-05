@@ -304,52 +304,13 @@ docker run -p 8080:8080 memory-leak-app
 
 ## 🎪 Advanced Usage
 
-### Continuous Memory Growth Loop
-```bash
-# Basic loop - process requests continuously
-while true; do 
-    curl -X POST http://localhost:8080/api/process
-    sleep 1
-done
-
-# Loop with counter and status monitoring
-for i in {1..100}; do 
-    echo "=== Request $i ==="
-    curl -X POST http://localhost:8080/api/process | jq '.appStats.totalRequests, .memoryStats.usedMemoryMB'
-    sleep 2
-done
-
-# Infinite loop with memory monitoring
-counter=1
-while true; do
-    echo "=== Request $counter ==="
-    response=$(curl -s -X POST http://localhost:8080/api/process)
-    echo "$response" | jq '.memoryStats.usedMemoryMB, .cacheStats.primaryCacheSize'
-    
-    # Check if memory usage is getting critical
-    memory_percent=$(echo "$response" | jq -r '.memoryStats.usedMemoryMB')
-    if [ "$memory_percent" -gt 400 ]; then
-        echo "⚠️  High memory usage detected: ${memory_percent}MB"
-    fi
-    
-    counter=$((counter + 1))
-    sleep 1
-done
-```
-
 ### Stress Testing
 ```bash
-# High-frequency requests (fast memory growth)
+# High-frequency requests
 for i in {1..50}; do 
     curl -X POST http://localhost:8080/api/process; 
     sleep 0.1; 
 done
-
-# Parallel requests (extreme stress)
-for i in {1..10}; do
-    curl -X POST http://localhost:8080/api/process &
-done
-wait
 ```
 
 ### Memory Monitoring
