@@ -32,6 +32,7 @@ show_help() {
     echo "Options:"
     echo "  simple         - Basic infinite loop (1 second delay)"
     echo "  slow           - Slow loop for long-term testing (30 second delay)"
+    echo "  auto-restart   - Auto-restart mode with crash detection (60 second delay)"
     echo "  fast           - Fast loop (0.1 second delay)"
     echo "  monitored      - Loop with memory monitoring"
     echo "  counted [N]    - Run N requests (default: 50)"
@@ -44,6 +45,8 @@ show_help() {
     echo "Examples:"
     echo "  $0 simple                    # Basic infinite loop"
     echo "  $0 slow                     # Long-term gradual testing (3-4 hours)"
+    echo "  $0 auto-restart             # Auto-restart with 60s intervals"
+    echo "  $0 auto-restart 120         # Auto-restart with 120s intervals"
     echo "  $0 counted 100              # Run 100 requests"
     echo "  $0 parallel 5               # 5 parallel requests"
     echo "  $0 monitored                # Loop with monitoring"
@@ -282,6 +285,69 @@ clear_caches() {
     fi
 }
 
+# Auto-restart loop with crash detection
+auto_restart_loop() {
+    local delay=${1:-60}  # Default 60 seconds, but allow override
+    echo -e "${GREEN}Starting auto-restart mode with ${delay}s intervals${NC}"
+    echo -e "${YELLOW}This mode will automatically restart the application if it crashes${NC}"
+    echo -e "${YELLOW}Monitoring application health every ${delay} seconds${NC}"
+    echo -e "${YELLOW}Ctrl+C to stop${NC}"
+    
+    counter=1
+    start_time=$(date +%s)
+    restart_count=0
+    
+    while true; do
+        current_time=$(date +%s)
+        elapsed=$((current_time - start_time))
+        hours=$((elapsed / 3600))
+        minutes=$(((elapsed % 3600) / 60))
+        
+        echo -e "${BLUE}Auto-restart check $counter (${hours}h ${minutes}m elapsed, restarts: $restart_count)${NC}"
+        
+        # Check if application is responding
+        if ! curl -s "$BASE_URL/health" > /dev/null 2>&1; then
+            echo -e "${RED}❌ Application not responding - attempting restart${NC}"
+            
+            # Kill any existing Java processes for this app
+            echo -e "${YELLOW}Stopping existing application processes...${NC}"
+            pkill -f "memory-overloader" 2>/dev/null || true
+            sleep 5
+            
+            # Start application with larger heap for longer runtime
+            echo -e "${YELLOW}Starting application with enhanced memory configuration...${NC}"
+            cd /Users/lbaya/Documents/rca-workspace/test_apps/memory_overloader
+            
+            # Use larger heap and optimized GC for longer runtime
+            export JAVA_OPTS="-Xms1g -Xmx3g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+UseStringDeduplication"
+            nohup mvn spring-boot:run > app.log 2>&1 &
+            
+            echo -e "${YELLOW}Waiting 30 seconds for application startup...${NC}"
+            sleep 30
+            
+            # Verify restart was successful
+            if curl -s "$BASE_URL/health" > /dev/null 2>&1; then
+                restart_count=$((restart_count + 1))
+                echo -e "${GREEN}✅ Application restarted successfully (restart #$restart_count)${NC}"
+            else
+                echo -e "${RED}❌ Failed to restart application - retrying in ${delay} seconds${NC}"
+            fi
+        else
+            # Application is responding - make a test request
+            echo -e "${CYAN}Making memory leak request...${NC}"
+            response=$(curl -s -X POST "$BASE_URL/process" 2>/dev/null)
+            if [ $? -eq 0 ]; then
+                echo -e "${GREEN}✅ Request successful${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Request failed but app is still responding${NC}"
+            fi
+        fi
+        
+        counter=$((counter + 1))
+        sleep "$delay"
+    done
+}
+
 # Main script logic
 case "${1:-help}" in
     "simple")
@@ -289,6 +355,9 @@ case "${1:-help}" in
         ;;
     "slow")
         check_app && slow_loop
+        ;;
+    "auto-restart")
+        auto_restart_loop "${2:-60}"
         ;;
     "fast")
         check_app && fast_loop
